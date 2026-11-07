@@ -21,7 +21,8 @@ Requires **Go 1.26+** and **Bun 1.3+**. Node/npm are not required.
 
 ```sh
 bun install
-export ADMIN_TOKEN='replace-with-a-long-random-secret'
+cp .env.example .env
+# Edit .env and set ADMIN_TOKEN to your own secret (at least 16 characters).
 bun run api
 ```
 
@@ -35,7 +36,7 @@ bun run dev
 
 Open **http://localhost:5173** and enter the same `ADMIN_TOKEN`. Vite proxies `/api` to `127.0.0.1:8080`. The browser stores the admin token in session storage for the current tab.
 
-The API reads environment variables directly; `.env.example` is a reference, not an automatically loaded config file.
+The API uses `godotenv` to load `.env` from the current working directory at startup. Existing environment variables take precedence over values in the file. The file is optional when configuration is supplied through the environment; unreadable or malformed files stop startup. `.env` is gitignored.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -47,7 +48,7 @@ The API reads environment variables directly; `.env.example` is a reference, not
 
 ```sh
 bun run build
-export ADMIN_TOKEN='replace-with-a-long-random-secret'
+# Configure .env as shown above, or export ADMIN_TOKEN in your environment.
 bun run api
 ```
 

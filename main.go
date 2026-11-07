@@ -7,9 +7,15 @@ import (
 	"syscall"
 
 	"edgenet/internal/portal"
+
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
+		log.Fatalf("load .env: %v", err)
+	}
+
 	key := os.Getenv("ADMIN_TOKEN")
 	if len(key) < 16 {
 		log.Fatal("set ADMIN_TOKEN to a secret of at least 16 characters")

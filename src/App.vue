@@ -330,7 +330,6 @@ onUnmounted(() => {
         >
       </div>
       <div class="login-story">
-        <span class="eyebrow">SMALL DEVICES. BIG POSSIBILITIES.</span>
         <h1>Your edge.<br />All connected.</h1>
         <p>One place to monitor your hardware, ship updates, and keep your entire fleet in sync.</p>
         <div class="hardware-row">
@@ -347,11 +346,9 @@ onUnmounted(() => {
         <div class="network-node node-two"><Code2 /></div>
         <div class="network-node node-three"><Cpu /></div>
       </div>
-      <span class="login-foot">Built for the things you build.</span>
     </div>
     <main class="login-panel">
       <form class="login-form" @submit.prevent="login">
-        <span class="mini-label"><ShieldCheck :size="16" /> YOUR WORKSPACE</span>
         <h2>Welcome to Edgenet</h2>
         <p>Connect to your device management portal.</p>
         <label for="admin-token">Admin access token</label
@@ -378,7 +375,6 @@ onUnmounted(() => {
             this browser tab.
           </p>
         </div>
-        <span class="stack-label">VUE 3 <span>+</span> GO FIBER v3</span>
       </form>
     </main>
   </div>
@@ -908,7 +904,7 @@ Content-Type: application/json
         </template>
         <footer class="page-footer">
           <span><span class="tiny-dot"></span> Edgenet · Your edge, connected.</span
-          ><span>Vue 3 + Go Fiber v3</span>
+          >
         </footer>
       </main>
     </div>
