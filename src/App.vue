@@ -21,7 +21,12 @@ import FleetStats from './domains/overview/components/FleetStats.vue'
 import RecentActivity from './domains/overview/components/RecentActivity.vue'
 
 const {
-  authenticated,
+  user,
+  googleEnabled,
+  adminEnabled,
+  initializing,
+  startGoogle,
+  restoreSession,
   loading,
   busy,
   error,
@@ -73,9 +78,21 @@ const dialogTitle = computed(() => {
 </script>
 
 <template>
-  <LoginView v-if="!authenticated" :loading="loading" :error="error" @login="login" />
+  <LoginView
+    v-if="!user"
+    :loading="loading"
+    :initializing="initializing"
+    :error="error"
+    :google-enabled="googleEnabled"
+    :admin-enabled="adminEnabled"
+    @login="login"
+    @google="startGoogle"
+    @retry="restoreSession"
+  />
   <AppLayout
     v-else
+    :key="user.id"
+    :user="user"
     :page="page"
     :device-count="state.devices.length"
     :loading="loading"

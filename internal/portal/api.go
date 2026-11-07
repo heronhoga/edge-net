@@ -18,6 +18,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/gofiber/fiber/v3/middleware/static"
+	bolt "go.etcd.io/bbolt"
 )
 
 const maxArtifact = 64 << 20
@@ -83,12 +84,8 @@ func (s *Server) App() *fiber.App {
 	app.Use(recover.New())
 	app.Use("/api", func(c fiber.Ctx) error { c.Set("Cache-Control", "no-store"); return c.Next() })
 	app.Get("/api/health", func(c fiber.Ctx) error { return c.JSON(fiber.Map{"status": "ok"}) })
-	admin := app.Group("/api/admin", func(c fiber.Ctx) error {
-		if !equal(hash(bearer(c)), hash(s.adminToken)) {
-			return fiber.ErrUnauthorized
-		}
-		return c.Next()
-	})
+	s.authRoutes(app)
+	admin := app.Group("/api/admin", s.requireUser)
 	admin.Get("/state", s.snapshot)
 	admin.Post("/devices", s.enroll)
 	admin.Post("/devices/:id/rotate-token", s.rotateToken)
@@ -98,11 +95,24 @@ func (s *Server) App() *fiber.App {
 	admin.Post("/deployments/:id/cancel", s.cancel)
 	agent := app.Group("/api/agent", func(c fiber.Ctx) error {
 		id := c.Get("X-Device-ID")
-		if err := s.view(func(st *State) error {
+		if err := s.db.View(func(tx *bolt.Tx) error {
+			index := tx.Bucket([]byte("deviceOwners"))
+			if index == nil {
+				return fiber.ErrUnauthorized
+			}
+			owner := string(index.Get([]byte(id)))
+			if owner == "" {
+				return fiber.ErrUnauthorized
+			}
+			st, err := loadWorkspace(tx, owner)
+			if err != nil {
+				return err
+			}
 			stored, ok := st.TokenHashes[id]
 			if !ok || !equal(stored, hash(bearer(c))) {
 				return fiber.ErrUnauthorized
 			}
+			c.Locals("workspaceID", owner)
 			return nil
 		}); err != nil {
 			return err
@@ -120,7 +130,7 @@ func (s *Server) App() *fiber.App {
 }
 
 func (s *Server) snapshot(c fiber.Ctx) error {
-	return s.view(func(st *State) error {
+	return s.viewWorkspace(workspaceID(c), func(st *State) error {
 		for i := range st.Devices {
 			d := &st.Devices[i]
 			d.Status = "pending"
@@ -131,7 +141,7 @@ func (s *Server) snapshot(c fiber.Ctx) error {
 				}
 			}
 		}
-		return c.JSON(fiber.Map{"devices": st.Devices, "firmware": st.Firmware, "deployments": st.Deployments, "events": st.Events, "serverTime": time.Now().UTC()})
+		return c.JSON(fiber.Map{"devices": st.Devices, "firmware": st.Firmware, "deployments": st.Deployments, "events": st.Events, "serverTime": time.Now().UTC(), "user": c.Locals("user"), "csrfToken": c.Locals("csrfToken")})
 	})
 }
 
@@ -156,7 +166,7 @@ func (s *Server) enroll(c fiber.Ctx) error {
 	}
 	token := randomID()
 	d := Device{ID: randomID(), Name: in.Name, Kind: in.Kind, Target: in.Target, Location: in.Location, Version: "unknown", CreatedAt: time.Now().UTC(), History: []Sample{}, Status: "pending"}
-	if err := s.change(func(st *State) error {
+	if err := s.changeWorkspace(workspaceID(c), func(st *State) error {
 		st.Devices = append(st.Devices, d)
 		st.TokenHashes[d.ID] = hash(token)
 		addEvent(st, d.Name+" enrolled")
@@ -169,7 +179,7 @@ func (s *Server) enroll(c fiber.Ctx) error {
 
 func (s *Server) rotateToken(c fiber.Ctx) error {
 	token := randomID()
-	if err := s.change(func(st *State) error {
+	if err := s.changeWorkspace(workspaceID(c), func(st *State) error {
 		d, err := device(st, c.Params("id"))
 		if err != nil {
 			return err
@@ -184,7 +194,7 @@ func (s *Server) rotateToken(c fiber.Ctx) error {
 }
 
 func (s *Server) removeDevice(c fiber.Ctx) error {
-	if err := s.change(func(st *State) error {
+	if err := s.changeWorkspace(workspaceID(c), func(st *State) error {
 		d, err := device(st, c.Params("id"))
 		if err != nil {
 			return err
@@ -228,7 +238,7 @@ func (s *Server) heartbeat(c fiber.Ctx) error {
 	if v := in.Metrics.Temperature; v != nil && (math.IsNaN(*v) || math.IsInf(*v, 0) || *v < -100 || *v > 300) {
 		return bad("Invalid temperature")
 	}
-	if err := s.change(func(st *State) error {
+	if err := s.changeWorkspace(workspaceID(c), func(st *State) error {
 		d, err := device(st, c.Locals("deviceID").(string))
 		if err != nil {
 			return err
@@ -292,7 +302,7 @@ func (s *Server) upload(c fiber.Ctx) error {
 		return bad("Invalid artifact size")
 	}
 	fw := Firmware{ID: id, Name: filepath.Base(fh.Filename), Version: version, Target: target, SHA256: hex.EncodeToString(h.Sum(nil)), Size: n, CreatedAt: time.Now().UTC()}
-	if err := s.change(func(st *State) error {
+	if err := s.changeWorkspace(workspaceID(c), func(st *State) error {
 		for _, existing := range st.Firmware {
 			if existing.Target == target && existing.Version == version {
 				return conflict("This target already has an artifact with that version")
@@ -317,7 +327,7 @@ func (s *Server) deploy(c fiber.Ctx) error {
 		return bad("Select between 1 and 100 devices")
 	}
 	jobs := []Deployment{}
-	if err := s.change(func(st *State) error {
+	if err := s.changeWorkspace(workspaceID(c), func(st *State) error {
 		fw, err := firmware(st, in.FirmwareID)
 		if err != nil {
 			return err
@@ -353,7 +363,7 @@ func (s *Server) deploy(c fiber.Ctx) error {
 }
 
 func (s *Server) cancel(c fiber.Ctx) error {
-	if err := s.change(func(st *State) error {
+	if err := s.changeWorkspace(workspaceID(c), func(st *State) error {
 		for i := range st.Deployments {
 			j := &st.Deployments[i]
 			if j.ID != c.Params("id") {
@@ -374,7 +384,7 @@ func (s *Server) cancel(c fiber.Ctx) error {
 }
 
 func (s *Server) jobs(c fiber.Ctx) error {
-	return s.view(func(st *State) error {
+	return s.viewWorkspace(workspaceID(c), func(st *State) error {
 		jobs := []fiber.Map{}
 		for _, j := range st.Deployments {
 			if j.DeviceID != c.Locals("deviceID").(string) || !active(j.Status) {
@@ -398,7 +408,7 @@ func (s *Server) report(c fiber.Ctx) error {
 	if err := c.Bind().Body(&in); err != nil || len(in.Message) > 500 {
 		return bad("Invalid status report")
 	}
-	if err := s.change(func(st *State) error {
+	if err := s.changeWorkspace(workspaceID(c), func(st *State) error {
 		for i := range st.Deployments {
 			j := &st.Deployments[i]
 			if j.ID != c.Params("id") || j.DeviceID != c.Locals("deviceID").(string) {
@@ -431,7 +441,7 @@ func (s *Server) report(c fiber.Ctx) error {
 
 func (s *Server) download(c fiber.Ctx) error {
 	var path string
-	if err := s.view(func(st *State) error {
+	if err := s.viewWorkspace(workspaceID(c), func(st *State) error {
 		for _, j := range st.Deployments {
 			if j.ID == c.Params("id") && j.DeviceID == c.Locals("deviceID").(string) && active(j.Status) {
 				path = filepath.Join(s.dir, "artifacts", j.FirmwareID)

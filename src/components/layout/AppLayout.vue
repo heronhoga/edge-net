@@ -3,8 +3,9 @@ import { ChevronRight, RefreshCw } from 'lucide-vue-next'
 import AppSidebar from './AppSidebar.vue'
 import { pageDescriptions, pageTitle } from '../../app/navigation'
 import type { Page } from '../../app/types'
+import { initials, type User } from '../../domains/auth/types'
 
-defineProps<{ page: Page; deviceCount: number; loading: boolean; error: string }>()
+defineProps<{ page: Page; deviceCount: number; loading: boolean; error: string; user: User }>()
 const emit = defineEmits<{ navigate: [page: Page]; logout: []; refresh: [] }>()
 </script>
 
@@ -13,6 +14,7 @@ const emit = defineEmits<{ navigate: [page: Page]; logout: []; refresh: [] }>()
     <AppSidebar
       :page="page"
       :device-count="deviceCount"
+      :user="user"
       @navigate="emit('navigate', $event)"
       @logout="emit('logout')"
     />
@@ -33,7 +35,7 @@ const emit = defineEmits<{ navigate: [page: Page]; logout: []; refresh: [] }>()
           >
             <RefreshCw :size="17" :class="{ spin: loading }" />
           </button>
-          <span class="topbar-avatar">AD</span>
+          <span class="topbar-avatar" :title="user.name">{{ initials(user) }}</span>
         </div>
       </header>
       <main class="content">

@@ -8,7 +8,7 @@ import type { Firmware, FirmwareUpload } from '../domains/firmware/types'
 import type { Deployment, DeploymentRequest } from '../domains/deployments/types'
 import { createAdminApi } from '../shared/api/admin'
 import { useNotice } from '../shared/composables/useNotice'
-import type { Dialog, Page, Snapshot } from './types'
+import type { Dialog, Page, Snapshot, WorkspaceSnapshot } from './types'
 
 function emptySnapshot(): Snapshot {
   return { devices: [], firmware: [], deployments: [], events: [], serverTime: '' }
@@ -16,7 +16,7 @@ function emptySnapshot(): Snapshot {
 
 export function useWorkspace() {
   const session = useSession()
-  const { token, authenticated } = session
+  const { token, user, authenticated, googleEnabled, adminEnabled, initializing } = session
   const { notice, toast } = useNotice()
   const state = ref<Snapshot>(emptySnapshot())
   const loading = ref(false)
@@ -31,28 +31,51 @@ export function useWorkspace() {
   const selected = computed(() =>
     state.value.devices.find((device) => device.id === selectedId.value),
   )
-  const api = createAdminApi(() => token.value, logout)
+  const api = createAdminApi(session.headers, expireSession)
   const devicesApi = createDevicesApi(api)
   const firmwareApi = createFirmwareApi(api)
   const deploymentsApi = createDeploymentsApi(api)
   let timer: ReturnType<typeof setInterval> | undefined
 
-  function logout() {
-    session.clear()
+  let generation = 0
+
+  function resetWorkspace() {
+    generation++
     dialog.value = ''
+    page.value = 'overview'
+    notice.value = ''
+    modalError.value = ''
     credentials.value = { id: '', token: '' }
     state.value = emptySnapshot()
   }
 
-  async function refresh() {
-    if (loading.value || !token.value) return
-    loading.value = true
-    const requestToken = token.value
+  function expireSession() {
+    session.clear()
+    resetWorkspace()
+  }
+
+  async function logout() {
     try {
-      const snapshot = await api<Snapshot>('/state')
-      if (token.value !== requestToken) return
+      await session.signOut()
+      resetWorkspace()
+      error.value = ''
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Could not sign out'
+    }
+  }
+
+  async function refresh() {
+    if (loading.value || !authenticated.value) return
+    loading.value = true
+    const requestGeneration = generation
+    try {
+      const snapshot = await api<WorkspaceSnapshot>('/state')
+      if (requestGeneration !== generation) return
+      // A Google account can change in another tab. Drop old dialogs and cached
+      // views before displaying the account that owns this response.
+      if (snapshot.user.id !== user.value?.id) resetWorkspace()
+      session.updateProfile(snapshot.user, snapshot.csrfToken)
       state.value = snapshot
-      authenticated.value = true
       error.value = ''
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Cannot reach the API'
@@ -63,8 +86,17 @@ export function useWorkspace() {
 
   async function login(value: string) {
     token.value = value.trim()
-    await refresh()
-    if (authenticated.value) session.remember()
+    loading.value = true
+    try {
+      await session.load()
+      if (!authenticated.value) throw new Error('Invalid admin access token')
+      error.value = ''
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Sign-in failed'
+    } finally {
+      loading.value = false
+    }
+    if (authenticated.value) await refresh()
   }
 
   function open(kind: Dialog) {
@@ -94,14 +126,17 @@ export function useWorkspace() {
     open('deploy')
   }
 
-  async function mutate(action: () => Promise<void>) {
+  async function mutate(action: (isCurrent: () => boolean) => Promise<void>) {
     if (busy.value) return
     busy.value = true
     modalError.value = ''
+    const requestGeneration = generation
+    const isCurrent = () => requestGeneration === generation
     try {
-      await action()
-      await refresh()
+      await action(isCurrent)
+      if (isCurrent()) await refresh()
     } catch (e) {
+      if (!isCurrent()) return
       const message = e instanceof Error ? e.message : 'Request failed'
       if (dialog.value) modalError.value = message
       else error.value = message
@@ -111,8 +146,9 @@ export function useWorkspace() {
   }
 
   async function enroll(input: Enrollment) {
-    await mutate(async () => {
+    await mutate(async (isCurrent) => {
       const result = await devicesApi.enroll(input)
+      if (!isCurrent()) return
       credentials.value = { id: result.device.id, token: result.token }
       dialog.value = 'credentials'
       toast('Device enrolled. Connect it using its new token.')
@@ -120,16 +156,18 @@ export function useWorkspace() {
   }
 
   async function upload(input: FirmwareUpload) {
-    await mutate(async () => {
+    await mutate(async (isCurrent) => {
       await firmwareApi.upload(input)
+      if (!isCurrent()) return
       dialog.value = ''
       toast('Firmware uploaded and SHA-256 checksum generated.')
     })
   }
 
   async function deploy(input: DeploymentRequest) {
-    await mutate(async () => {
+    await mutate(async (isCurrent) => {
       await deploymentsApi.create(input)
+      if (!isCurrent()) return
       dialog.value = ''
       page.value = 'deployments'
       toast('Deployment queued. Devices will pick it up on their next check-in.')
@@ -137,8 +175,9 @@ export function useWorkspace() {
   }
 
   async function cancel(job: Deployment) {
-    await mutate(async () => {
+    await mutate(async (isCurrent) => {
       await deploymentsApi.cancel(job.id)
+      if (!isCurrent()) return
       toast('Deployment cancelled.')
     })
   }
@@ -148,8 +187,9 @@ export function useWorkspace() {
       !confirm(`Replace the access token for ${device.name}? Its current token will stop working.`)
     )
       return
-    await mutate(async () => {
+    await mutate(async (isCurrent) => {
       const result = await devicesApi.rotateToken(device.id)
+      if (!isCurrent()) return
       credentials.value = { id: device.id, token: result.token }
       dialog.value = 'credentials'
     })
@@ -157,8 +197,9 @@ export function useWorkspace() {
 
   async function remove(device: Device) {
     if (!confirm(`Remove ${device.name} and revoke its access?`)) return
-    await mutate(async () => {
+    await mutate(async (isCurrent) => {
       await devicesApi.remove(device.id)
+      if (!isCurrent()) return
       dialog.value = ''
       toast('Device removed.')
     })
@@ -175,8 +216,34 @@ export function useWorkspace() {
     }
   }
 
+  async function restoreSession() {
+    initializing.value = true
+    try {
+      const previousUser = user.value?.id
+      await session.load()
+      if (user.value?.id !== previousUser) resetWorkspace()
+      if (authenticated.value) await refresh()
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Could not restore your session'
+    } finally {
+      initializing.value = false
+    }
+  }
+
   onMounted(() => {
-    if (token.value) void refresh()
+    const url = new URL(window.location.href)
+    const authError = url.searchParams.get('auth_error')
+    if (authError) {
+      error.value =
+        authError === 'cancelled'
+          ? 'Google sign-in was cancelled. Please try again.'
+          : authError === 'expired'
+            ? 'Your sign-in request expired. Please try again.'
+            : 'Google sign-in failed. Please try again.'
+      url.searchParams.delete('auth_error')
+      window.history.replaceState({}, '', url)
+    }
+    void restoreSession()
     timer = setInterval(() => {
       if (authenticated.value) void refresh()
     }, 5000)
@@ -185,6 +252,12 @@ export function useWorkspace() {
 
   return {
     authenticated,
+    user,
+    googleEnabled,
+    adminEnabled,
+    initializing,
+    startGoogle: session.startGoogle,
+    restoreSession,
     loading,
     busy,
     error,

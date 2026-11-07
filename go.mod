@@ -3,12 +3,16 @@ module edgenet
 go 1.26.0
 
 require (
+	github.com/coreos/go-oidc/v3 v3.21.0
+	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/gofiber/fiber/v3 v3.6.1
 	github.com/joho/godotenv v1.5.1
 	go.etcd.io/bbolt v1.5.0
+	golang.org/x/oauth2 v0.37.0
 )
 
 require (
+	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	github.com/gofiber/schema v1.8.8 // indirect
 	github.com/gofiber/utils/v2 v2.6.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect

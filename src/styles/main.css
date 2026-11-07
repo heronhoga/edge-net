@@ -1773,6 +1773,47 @@ td strong {
   padding: 11px;
   gap: 12px;
 }
+.google-login {
+  width: 100%;
+  padding: 12px 16px;
+  font-size: 13px;
+  gap: 12px;
+}
+.login-form .auth-help {
+  margin: 12px 0 0;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+.auth-retry {
+  margin-top: 12px;
+}
+.admin-login {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.admin-login summary {
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.admin-login form {
+  margin-top: 18px;
+}
+.admin-login label {
+  margin-bottom: 9px;
+}
+.profile-identity {
+  min-width: 0;
+  flex: 1;
+}
+.profile-identity strong,
+.profile-identity > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .login-hint {
   display: flex;
   gap: 12px;

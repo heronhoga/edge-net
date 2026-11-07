@@ -3,7 +3,7 @@
 - `App.vue` composes domain views and dialog contents, and connects their typed events to workspace actions.
 - `app/` owns cross-domain coordination: navigation, the API snapshot, polling, and mutation feedback. `useWorkspace` creates state per application instance.
 - `domains/` groups features by business responsibility:
-  - `auth`: login UI and session storage.
+  - `auth`: Google sign-in UI, cookie-session restoration, CSRF headers, user profiles, and optional local-admin login.
   - `devices`: enrollment, credentials, device lists/details, telemetry, filtering, hardware definitions, and device API calls.
   - `firmware`: artifact cards, uploads, and firmware API calls.
   - `deployments`: compatible-device selection, job history, job status rules, and deployment API calls.

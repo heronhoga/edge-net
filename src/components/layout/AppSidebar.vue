@@ -2,8 +2,9 @@
 import { ArrowUpRight, ChevronRight, CircleHelp, LogOut, Network, Radio } from 'lucide-vue-next'
 import { navigation } from '../../app/navigation'
 import type { Page } from '../../app/types'
+import { initials, type User } from '../../domains/auth/types'
 
-defineProps<{ page: Page; deviceCount: number }>()
+defineProps<{ page: Page; deviceCount: number; user: User }>()
 const emit = defineEmits<{ navigate: [page: Page]; logout: [] }>()
 </script>
 
@@ -15,7 +16,7 @@ const emit = defineEmits<{ navigate: [page: Page]; logout: [] }>()
     </a>
     <div class="workspace">
       <div class="workspace-avatar">E</div>
-      <div><strong>My workspace</strong><span>Edge infrastructure</span></div>
+      <div><strong>My workspace</strong><span>Private device fleet</span></div>
       <ChevronRight :size="15" />
     </div>
     <span class="nav-label">WORKSPACE</span>
@@ -48,8 +49,11 @@ const emit = defineEmits<{ navigate: [page: Page]; logout: [] }>()
         <CircleHelp :size="19" /><span>Connection guide</span>
       </button>
       <div class="profile">
-        <span class="profile-avatar">AD</span>
-        <div><strong>Administrator</strong><span>Workspace owner</span></div>
+        <span class="profile-avatar">{{ initials(user) }}</span>
+        <div class="profile-identity">
+          <strong :title="user.name">{{ user.name }}</strong
+          ><span :title="user.email">{{ user.email || 'Local workspace' }}</span>
+        </div>
         <button class="icon-button" aria-label="Sign out" @click="emit('logout')">
           <LogOut :size="17" />
         </button>

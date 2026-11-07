@@ -7,6 +7,7 @@ test('enroll, monitor, upload, deploy, and view on mobile', async ({ page, reque
   const name = `Lab sensor ${unique}`
   const target = `arduino-e2e-${unique}`
   await page.goto('/')
+  await page.getByText('Local administrator', { exact: true }).click()
   await page.getByLabel('Admin access token').fill('e2e-only-admin-token')
   await page.getByRole('button', { name: 'Open workspace' }).click()
   await expect(page.getByRole('heading', { name: 'Fleet overview' })).toBeVisible()
@@ -114,6 +115,7 @@ test('domain navigation preserves filters and device forms reset between uses', 
 
   try {
     await page.goto('/')
+    await page.getByText('Local administrator', { exact: true }).click()
     await page.getByLabel('Admin access token').fill('e2e-only-admin-token')
     await page.getByRole('button', { name: 'Open workspace' }).click()
     await expect(page.getByRole('heading', { name: 'Fleet overview' })).toBeVisible()
@@ -165,6 +167,7 @@ test('domain navigation preserves filters and device forms reset between uses', 
     await expect(page.getByRole('button', { name: `View ${name}` })).not.toBeVisible()
     await expect(page.locator('tbody tr')).toHaveCount(0)
     await page.getByRole('button', { name: 'Sign out' }).click()
+    await expect(page.getByRole('heading', { name: 'Welcome to Edgenet' })).toBeVisible()
     await page.reload()
     await expect(page.getByRole('heading', { name: 'Welcome to Edgenet' })).toBeVisible()
   } finally {

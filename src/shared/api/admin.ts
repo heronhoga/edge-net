@@ -1,13 +1,14 @@
 export type AdminApi = <T>(path: string, init?: RequestInit) => Promise<T>
 
-export function createAdminApi(getToken: () => string, onUnauthorized: () => void): AdminApi {
+export function createAdminApi(getHeaders: () => Headers, onUnauthorized: () => void): AdminApi {
   return async <T>(path: string, init: RequestInit = {}): Promise<T> => {
-    const headers = new Headers(init.headers)
-    headers.set('Authorization', `Bearer ${getToken()}`)
+    const headers = getHeaders()
+    new Headers(init.headers).forEach((value, key) => headers.set(key, value))
     if (init.body && !(init.body instanceof FormData))
       headers.set('Content-Type', 'application/json')
     const res = await fetch(`/api/admin${path}`, {
       ...init,
+      credentials: 'same-origin',
       headers,
       signal: AbortSignal.timeout(60000),
     })

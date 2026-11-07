@@ -1,11 +1,12 @@
 # Edgenet
 
-A self-hosted portal for monitoring Arduino and ESP32 devices and coordinating firmware updates. Built with **Vue 3 + TypeScript + Vite**, **Bun**, and **Go Fiber v3**.
+A self-hosted, multi-user portal for monitoring Arduino and ESP32 devices and coordinating firmware updates. People sign in with Google and manage their own private device workspace. Built with **Vue 3 + TypeScript + Vite**, **Bun**, and **Go Fiber v3**.
 
 Supported device families are limited to **Arduino and ESP32**.
 
 ## What works
 
+- Sign in with Google; each account has its own devices, firmware, deployments, and activity.
 - Enroll ESP32 and Arduino devices with a unique access token.
 - Monitor online/offline status, CPU, memory, temperature, uptime, and firmware version.
 - View the latest 60 telemetry samples per device and the latest 100 activity events.
@@ -24,7 +25,7 @@ Requires **Go 1.26+** and **Bun 1.3+**. Node/npm are not required.
 ```sh
 bun install
 cp .env.example .env
-# Edit .env and set ADMIN_TOKEN to your own secret (at least 16 characters).
+# Configure APP_URL, GOOGLE_CLIENT_ID, and GOOGLE_CLIENT_SECRET in .env (see below).
 bun run api
 ```
 
@@ -36,25 +37,58 @@ In a second terminal:
 bun run dev
 ```
 
-Open **http://localhost:5173** and enter the same `ADMIN_TOKEN`. Vite proxies `/api` to `127.0.0.1:8080`. The browser stores the admin token in session storage for the current tab.
+Open **http://localhost:5173** and choose **Continue with Google**. Vite proxies `/api`, including OAuth callbacks, to `127.0.0.1:8080`. Set `APP_URL=http://localhost:5173` and use that exact origin in your browser.
+
+For local development without Google credentials, set an optional `ADMIN_TOKEN` of at least 16 characters and expand **Local administrator** on the sign-in page. This opens a separate local workspace.
 
 The API uses `godotenv` to load `.env` from the current working directory at startup. Existing environment variables take precedence over values in the file. The file is optional when configuration is supplied through the environment; unreadable or malformed files stop startup. `.env` is gitignored.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `ADMIN_TOKEN` | required | Admin API secret, at least 16 characters |
+| `APP_URL` | `http://localhost:5173` | Public browser origin; HTTPS required outside localhost |
+| `GOOGLE_CLIENT_ID` | unset | Google OAuth web application's client ID |
+| `GOOGLE_CLIENT_SECRET` | unset | Google OAuth client secret, used only by the backend |
+| `ADMIN_TOKEN` | unset | Optional local-workspace access token, at least 16 characters |
 | `LISTEN_ADDR` | `:8080` | API listen address |
 | `DATA_DIR` | `data` | Database and firmware artifact directory |
+
+Configure both Google credentials, or set `ADMIN_TOKEN` for local-only access. Leave `ADMIN_TOKEN` blank for a Google-only deployment. Never put the Google client secret in a `VITE_` variable or frontend code.
+
+### Google sign-in setup
+
+1. Create or select a project in the [Google Cloud Console](https://console.cloud.google.com/).
+2. Configure the Google Auth Platform consent screen/branding and audience. Choose an external audience if people outside your organization should use the app. While the app is in testing, add the Google accounts that should be allowed to sign in as test users.
+3. Create an OAuth client with application type **Web application**.
+4. Add an **Authorized redirect URI** that exactly matches `APP_URL` plus `/api/auth/google/callback`:
+   - Vite development: `http://localhost:5173/api/auth/google/callback`
+   - Local single-server build: `http://localhost:8080/api/auth/google/callback`
+   - Production example: `https://edgenet.example.com/api/auth/google/callback`
+5. Copy the client ID and secret into `.env` and restart the backend:
+
+```dotenv
+APP_URL=http://localhost:5173
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-client-secret
+ADMIN_TOKEN=
+```
+
+The flow requests only `openid`, `email`, and `profile`. The backend exchanges the authorization code, verifies Google's signed ID token (issuer, audience, expiry, verified email, and nonce), and creates a session. OAuth state is bound to the initiating browser and can be used once; PKCE protects the code exchange. Google access/refresh tokens are not retained.
+
+Google users receive an HttpOnly, SameSite=Lax session cookie lasting seven days; it is Secure on HTTPS. Session IDs are hashed in the database and logout revokes the current session. Browser mutations require a session-specific CSRF token. Identity is keyed by Google's stable subject identifier, so changing an email address does not create a new workspace. There is no shared fleet or organization/team access in this version.
+
+### Existing installations
+
+On startup, the old single-workspace database is migrated atomically to the **local-admin workspace**. Its devices, tokens, firmware, deployment history, and activity are preserved. Keep your existing `ADMIN_TOKEN` to access that workspace. Google accounts start with independent empty workspaces; existing data is not assigned to the first person who signs in. The local administrator token cannot access Google users' workspaces.
 
 ### Single-server build
 
 ```sh
 bun run build
-# Configure .env as shown above, or export ADMIN_TOKEN in your environment.
+# Set APP_URL=http://localhost:8080 in .env and register the matching Google callback.
 bun run api
 ```
 
-Open **http://localhost:8080**. Fiber serves the production frontend from `dist/`. Run from the project root so the server can locate it. Place the server behind an HTTPS reverse proxy for remote devices.
+Open **http://localhost:8080**. Fiber serves the production frontend from `dist/`. Run from the project root so the server can locate it. For a public deployment, set `APP_URL` to the HTTPS origin, register that exact Google callback, and put the server behind an HTTPS reverse proxy that forwards both the frontend and `/api` paths to the same backend. Redirects and cookie security come from `APP_URL`, not forwarded request headers.
 
 ### Checks
 
@@ -165,9 +199,13 @@ queued ──→ downloading ──→ installing ──→ succeeded
 
 Repeating the current status is idempotent. Skipping a state or changing a terminal state returns `409`. Report `succeeded` only after installation/boot verification. The server does not infer success from an upload or a download. Jobs have no automatic timeout: interrupted devices retain their work until their agent reconnects and resolves the outcome.
 
-## Admin API
+## Authentication and workspace API
 
-Use `Authorization: Bearer ADMIN_TOKEN`.
+The browser uses `GET /api/auth/google` to start sign-in and returns through `GET /api/auth/google/callback`. `GET /api/auth/session` returns the current user, CSRF token, and enabled login methods (or a null user when signed out). `POST /api/auth/logout` revokes the current session.
+
+The `/api/admin` route prefix is retained for compatibility; every operation is scoped to the authenticated user's workspace. Google users authenticate with their session cookie and send `X-CSRF-Token` on POST/DELETE requests. Local-workspace clients may use `Authorization: Bearer ADMIN_TOKEN`. A device token grants access only to that device's agent endpoints.
+
+Devices, artifacts, deployments, and activity are isolated by workspace. Another user's resource IDs return `404`; a deployment must use firmware and devices from the same workspace. Firmware target/version uniqueness is also scoped per workspace.
 
 | Method | Endpoint | Body |
 | --- | --- | --- |
@@ -194,6 +232,6 @@ src/styles/           Global theme and responsive styles
 data/                 Runtime database + artifacts (gitignored)
 ```
 
-This is a **single-workspace MVP**, designed for a small fleet on one server. bbolt serializes writes; each transaction reads/writes the metadata snapshot. Heartbeat history is bounded, but deployment records and artifacts are retained. Stop the server before copying the entire data directory for a consistent backup. Run only one API process per database.
+This is a **multi-user MVP** with one private workspace per Google account, hosted on one server. bbolt serializes writes; each transaction reads/writes one workspace's metadata snapshot. User records and hashed sessions are persisted alongside workspace data. Heartbeat history is bounded, but deployment records and artifacts are retained. Stop the server before copying the entire data directory for a consistent backup. Run only one API process per database.
 
-Next steps for a larger deployment are device-specific OTA adapters, signed firmware and secure-boot integration, a relational/time-series database, artifact retention, rollout batches and rollback policies, and user accounts/RBAC. SHA-256 detects corruption; it is not a firmware signature. The current UI polls the API every five seconds rather than using MQTT or WebSockets.
+Next steps for a larger deployment are device-specific OTA adapters, signed firmware and secure-boot integration, a relational/time-series database, per-user storage quotas, artifact retention, rollout batches and rollback policies, and team workspaces/RBAC. SHA-256 detects corruption; it is not a firmware signature. The current UI polls the API every five seconds rather than using MQTT or WebSockets.

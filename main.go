@@ -17,7 +17,7 @@ func main() {
 	}
 
 	key := os.Getenv("ADMIN_TOKEN")
-	if len(key) < 16 {
+	if key != "" && len(key) < 16 {
 		log.Fatal("set ADMIN_TOKEN to a secret of at least 16 characters")
 	}
 	dir := os.Getenv("DATA_DIR")
@@ -29,6 +29,20 @@ func main() {
 		log.Fatal(err)
 	}
 	defer s.Close()
+	appURL := os.Getenv("APP_URL")
+	if appURL == "" {
+		appURL = "http://localhost:5173"
+	}
+	if err := s.ConfigureAuth(portal.AuthConfig{
+		AppURL:             appURL,
+		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
+		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+	}); err != nil {
+		log.Fatal(err)
+	}
+	if key == "" && os.Getenv("GOOGLE_CLIENT_ID") == "" {
+		log.Fatal("configure GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, or ADMIN_TOKEN for local administration")
+	}
 	app := s.App()
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)

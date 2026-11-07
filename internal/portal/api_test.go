@@ -18,10 +18,13 @@ import (
 const adminKey = "integration-test-admin-secret"
 
 type client struct {
-	t     *testing.T
-	app   *fiber.App
-	token string
-	id    string
+	t      *testing.T
+	app    *fiber.App
+	token  string
+	id     string
+	cookie *http.Cookie
+	csrf   string
+	origin string
 }
 
 func (cl client) request(method, path string, body any, want int) []byte {
@@ -44,6 +47,15 @@ func (cl client) request(method, path string, body any, want int) []byte {
 	}
 	if cl.id != "" {
 		req.Header.Set("X-Device-ID", cl.id)
+	}
+	if cl.cookie != nil {
+		req.AddCookie(cl.cookie)
+	}
+	if cl.csrf != "" {
+		req.Header.Set("X-CSRF-Token", cl.csrf)
+	}
+	if cl.origin != "" {
+		req.Header.Set("Origin", cl.origin)
 	}
 	res, err := cl.app.Test(req)
 	if err != nil {
