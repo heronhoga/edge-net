@@ -40,13 +40,11 @@ test('enroll, monitor, upload, deploy, and view on mobile', async ({ page, reque
 
   await page.getByRole('button', { name: 'Firmware', exact: true }).click()
   await page.getByRole('button', { name: 'Upload firmware', exact: true }).click()
-  await dialog
-    .getByLabel('Firmware artifact')
-    .setInputFiles({
-      name: 'update.bin',
-      mimeType: 'application/octet-stream',
-      buffer: Buffer.from('browser integration test package'),
-    })
+  await dialog.getByLabel('Firmware artifact').setInputFiles({
+    name: 'update.bin',
+    mimeType: 'application/octet-stream',
+    buffer: Buffer.from('browser integration test package'),
+  })
   await dialog.getByLabel('Version', { exact: true }).fill('2.0.0')
   await dialog.getByLabel('Hardware target').fill(target)
   await dialog.getByRole('button', { name: 'Upload artifact', exact: true }).click()
@@ -99,4 +97,77 @@ test('enroll, monitor, upload, deploy, and view on mobile', async ({ page, reque
     headers: { Authorization: 'Bearer e2e-only-admin-token' },
   })
   expect(removed.status()).toBe(204)
+})
+
+test('domain navigation preserves filters and device forms reset between uses', async ({
+  page,
+  request,
+}) => {
+  const name = `ESP32 lifecycle ${Date.now()}`
+  const adminHeaders = { Authorization: 'Bearer e2e-only-admin-token' }
+  const response = await request.post('/api/admin/devices', {
+    headers: adminHeaders,
+    data: { name, kind: 'esp32', target: 'esp32-devkit-v1', location: 'Lab' },
+  })
+  expect(response.status()).toBe(201)
+  const { device, token } = await response.json()
+
+  try {
+    await page.goto('/')
+    await page.getByLabel('Admin access token').fill('e2e-only-admin-token')
+    await page.getByRole('button', { name: 'Open workspace' }).click()
+    await expect(page.getByRole('heading', { name: 'Fleet overview' })).toBeVisible()
+    await page.reload()
+    await expect(page.getByRole('heading', { name: 'Fleet overview' })).toBeVisible()
+
+    await page.getByLabel('Search devices').fill(name)
+    await page.getByRole('button', { name: 'Pending', exact: true }).click()
+    await page.getByTitle('Connection guide').click()
+    await expect(page.getByRole('heading', { name: 'From hardware to dashboard' })).toBeVisible()
+    await page.getByRole('button', { name: 'Add a device', exact: true }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByLabel('Device name').fill('Unsaved board')
+    await dialog.getByLabel('Device type').selectOption('arduino')
+    await expect(dialog.getByLabel('Hardware target')).toHaveValue('arduino-uno-r4-wifi')
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+    await page.getByRole('button', { name: 'Add a device', exact: true }).click()
+    await expect(dialog.getByLabel('Device name')).toHaveValue('')
+    await expect(dialog.getByLabel('Device type')).toHaveValue('esp32')
+    await expect(dialog.getByLabel('Hardware target')).toHaveValue('esp32-devkit-v1')
+    await page.keyboard.press('Escape')
+    await expect(dialog).not.toBeVisible()
+
+    await page.getByRole('button', { name: /^Devices/ }).click()
+    await expect(page.getByLabel('Search devices')).toHaveValue(name)
+    await expect(page.getByRole('button', { name: 'Pending', exact: true })).toHaveClass('selected')
+    await expect(page.locator('tbody tr')).toHaveCount(1)
+    await page.getByRole('button', { name: `View ${name}` }).click()
+    page.once('dialog', (confirmation) => confirmation.accept())
+    await dialog.getByRole('button', { name: 'Rotate token' }).click()
+    await expect(
+      dialog.getByRole('heading', { name: 'Your device is ready to connect' }),
+    ).toBeVisible()
+    const newToken = await dialog.locator('.copy-field code').nth(1).innerText()
+    expect(newToken).not.toBe(token)
+    const oldAccess = await request.get('/api/agent/jobs', {
+      headers: { Authorization: `Bearer ${token}`, 'X-Device-ID': device.id },
+    })
+    expect(oldAccess.status()).toBe(401)
+    const newAccess = await request.get('/api/agent/jobs', {
+      headers: { Authorization: `Bearer ${newToken}`, 'X-Device-ID': device.id },
+    })
+    expect(newAccess.status()).toBe(200)
+    await dialog.getByRole('button', { name: 'I saved my token' }).click()
+    await page.getByRole('button', { name: `View ${name}` }).click()
+    page.once('dialog', (confirmation) => confirmation.accept())
+    await dialog.getByRole('button', { name: 'Remove device' }).click()
+    await expect(dialog).not.toBeVisible()
+    await expect(page.getByRole('button', { name: `View ${name}` })).not.toBeVisible()
+    await expect(page.locator('tbody tr')).toHaveCount(0)
+    await page.getByRole('button', { name: 'Sign out' }).click()
+    await page.reload()
+    await expect(page.getByRole('heading', { name: 'Welcome to Edgenet' })).toBeVisible()
+  } finally {
+    await request.delete(`/api/admin/devices/${device.id}`, { headers: adminHeaders })
+  }
 })

@@ -2,6 +2,8 @@
 
 A self-hosted portal for monitoring Arduino and ESP32 devices and coordinating firmware updates. Built with **Vue 3 + TypeScript + Vite**, **Bun**, and **Go Fiber v3**.
 
+Supported device families are limited to **Arduino and ESP32**.
+
 ## What works
 
 - Enroll ESP32 and Arduino devices with a unique access token.
@@ -177,14 +179,18 @@ Use `Authorization: Bearer ADMIN_TOKEN`.
 | POST | `/api/admin/deployments` | `{ "firmwareId": "...", "deviceIds": ["..."] }` |
 | POST | `/api/admin/deployments/:id/cancel` | Cancels only a queued job |
 
-Device kinds: `esp32`, `arduino`. Enrollment fields and versions have bounded lengths; artifact target/version pairs are unique. Multi-device deployment validation and creation are atomic. Errors use `{ "error": "message" }`.
+Accepted device kinds: `esp32` and `arduino` only. Enrollment fields and versions have bounded lengths; artifact target/version pairs are unique. Multi-device deployment validation and creation are atomic. Errors use `{ "error": "message" }`.
 
 ## Structure and scope
 
 ```text
 main.go               Go entry point and graceful shutdown
 internal/portal/      Fiber routes, models, bbolt transactions, integration tests
-src/                  Vue dashboard, typed API data, responsive styles
+src/app/              Workspace orchestration, navigation, and snapshot types
+src/domains/          Auth, devices, firmware, deployments, overview, connection guide
+src/components/       Shared layout and UI components
+src/shared/           HTTP client, formatting helpers, and notification composable
+src/styles/           Global theme and responsive styles
 data/                 Runtime database + artifacts (gitignored)
 ```
 
