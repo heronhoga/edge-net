@@ -4,8 +4,8 @@ test('enroll, monitor, upload, deploy, and view on mobile', async ({ page, reque
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   const unique = Date.now().toString()
-  const name = `Lab gateway ${unique}`
-  const target = `linux-e2e-${unique}`
+  const name = `Lab sensor ${unique}`
+  const target = `arduino-e2e-${unique}`
   await page.goto('/')
   await page.getByLabel('Admin access token').fill('e2e-only-admin-token')
   await page.getByRole('button', { name: 'Open workspace' }).click()
@@ -14,7 +14,8 @@ test('enroll, monitor, upload, deploy, and view on mobile', async ({ page, reque
   await page.getByRole('button', { name: 'Add device', exact: true }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel('Device name').fill(name)
-  await dialog.getByLabel('Device type').selectOption('mini-pc')
+  await expect(dialog.getByLabel('Device type').locator('option')).toHaveText(['ESP32', 'Arduino'])
+  await dialog.getByLabel('Device type').selectOption('arduino')
   await dialog.getByLabel('Hardware target').fill(target)
   await dialog.getByLabel('Location').fill('Workshop')
   await dialog.getByRole('button', { name: 'Add device', exact: true }).click()

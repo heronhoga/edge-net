@@ -123,6 +123,9 @@ func TestDeviceEnrollmentTelemetryAndTokenRotation(t *testing.T) {
 	anonymous.request("GET", "/api/admin/state", nil, 401)
 	anonymous.request("POST", "/api/agent/heartbeat", map[string]string{"version": "1"}, 401)
 	admin.request("POST", "/api/admin/devices", map[string]string{"name": " ", "kind": "esp32", "target": "esp32"}, 400)
+	for _, kind := range []string{"raspberry-pi", "mini-pc"} {
+		admin.request("POST", "/api/admin/devices", map[string]string{"name": "Unsupported", "kind": kind, "target": "unsupported-target"}, 400)
+	}
 	d, agent := admin.enroll("Sensor", "esp32-v1")
 	agent.request("GET", "/api/admin/state", nil, 401)
 	initial := decode[State](t, admin.request("GET", "/api/admin/state", nil, 200))
@@ -171,7 +174,7 @@ func TestFirmwareDeploymentEndToEnd(t *testing.T) {
 	_, admin := setup(t)
 	d, agent := admin.enroll("ESP32", "esp32-v1")
 	other, otherAgent := admin.enroll("Other", "esp32-v1")
-	incompatible, _ := admin.enroll("Other target", "linux-arm64")
+	incompatible, _ := admin.enroll("Other target", "esp32-s3")
 	content := "test firmware binary contents"
 	fw := decode[Firmware](t, admin.request("POST", "/api/admin/firmware", artifact(t, "2.0.0", "esp32-v1", content), 201))
 	if fw.SHA256 != hash(content) || fw.Size != int64(len(content)) {

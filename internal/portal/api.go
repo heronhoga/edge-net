@@ -150,7 +150,7 @@ func (s *Server) enroll(c fiber.Ctx) error {
 		return bad("Name and hardware target are required (80 and 100 characters maximum)")
 	}
 	switch in.Kind {
-	case "esp32", "arduino", "raspberry-pi", "mini-pc":
+	case "esp32", "arduino":
 	default:
 		return bad("Unsupported device kind")
 	}

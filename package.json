@@ -7,9 +7,8 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
-    "api": "go run ./cmd/server",
+    "api": "go run main.go",
     "test:api": "go test ./...",
-    "test:agent": "python3 -m unittest discover -s agents/linux -v",
     "test:e2e": "bun run build && bunx --bun playwright test"
   },
   "dependencies": {

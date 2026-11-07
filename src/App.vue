@@ -12,7 +12,6 @@ import {
   Code2,
   Copy,
   Cpu,
-  HardDrive,
   Layers3,
   LayoutDashboard,
   LoaderCircle,
@@ -22,7 +21,6 @@ import {
   Radio,
   RefreshCw,
   Search,
-  Server,
   ShieldCheck,
   Terminal,
   Upload,
@@ -76,14 +74,10 @@ const nav = [
 const kinds: Record<string, string> = {
   esp32: 'ESP32',
   arduino: 'Arduino',
-  'raspberry-pi': 'Raspberry Pi',
-  'mini-pc': 'Mini PC',
 }
 const targets: Record<string, string> = {
   esp32: 'esp32-devkit-v1',
   arduino: 'arduino-uno-r4-wifi',
-  'raspberry-pi': 'linux-arm64',
-  'mini-pc': 'linux-amd64',
 }
 const selected = computed(() => state.value.devices.find((d) => d.id === selectedId.value))
 const online = computed(() => state.value.devices.filter((d) => d.status === 'online').length)
@@ -106,16 +100,16 @@ const compatible = computed(() =>
 const pageTitle = computed(() =>
   page.value === 'connect' ? 'Connect your devices' : nav.find((n) => n.id === page.value)?.label,
 )
-const connectionCommand = computed(
+const connectionHeaders = computed(
   () =>
-    `export EDGENET_URL="http://YOUR_SERVER:8080"\nexport EDGENET_DEVICE_ID="${credentials.value.id}"\nexport EDGENET_DEVICE_TOKEN="${credentials.value.token}"\npython3 agents/linux/agent.py`,
+    `Authorization: Bearer ${credentials.value.token}\nX-Device-ID: ${credentials.value.id}\nContent-Type: application/json`,
 )
 
 function isActive(s: string) {
   return ['queued', 'downloading', 'installing'].includes(s)
 }
 function kindIcon(kind: string) {
-  return kind === 'mini-pc' ? Server : kind === 'raspberry-pi' ? HardDrive : Cpu
+  return kind === 'arduino' ? Code2 : Cpu
 }
 function relative(value: string | null) {
   if (!value) return 'Never connected'
@@ -340,8 +334,8 @@ onUnmounted(() => {
         <h1>Your edge.<br />All connected.</h1>
         <p>One place to monitor your hardware, ship updates, and keep your entire fleet in sync.</p>
         <div class="hardware-row">
-          <Cpu /><span>Microcontrollers</span><span class="dot-separator">/</span><Server /><span
-            >Edge servers</span
+          <Cpu /><span>ESP32</span><span class="dot-separator">/</span><Code2 /><span
+            >Arduino</span
           >
         </div>
       </div>
@@ -350,8 +344,8 @@ onUnmounted(() => {
         <div class="orbit orbit-two"></div>
         <div class="network-center"><Network :size="48" /></div>
         <div class="network-node node-one"><Cpu /></div>
-        <div class="network-node node-two"><Server /></div>
-        <div class="network-node node-three"><HardDrive /></div>
+        <div class="network-node node-two"><Code2 /></div>
+        <div class="network-node node-three"><Cpu /></div>
       </div>
       <span class="login-foot">Built for the things you build.</span>
     </div>
@@ -467,12 +461,12 @@ onUnmounted(() => {
                 page === 'overview'
                   ? 'A little visibility goes a long way. Here’s how your devices are doing.'
                   : page === 'devices'
-                    ? 'Every board, gateway, and server. All in one place.'
+                    ? 'Every Arduino and ESP32 board. All in one place.'
                     : page === 'firmware'
                       ? 'Versioned artifacts, ready for their next deployment.'
                       : page === 'deployments'
                         ? 'Follow every update from queued to completed.'
-                        : 'A simple protocol for any hardware you build on.'
+                        : 'Connect your Arduino and ESP32 boards with a simple HTTP protocol.'
               }}
             </p>
           </div>
@@ -644,7 +638,7 @@ onUnmounted(() => {
                 {{
                   state.devices.length
                     ? 'Try another search or status filter.'
-                    : 'Connect an ESP32, Arduino, Raspberry Pi, or mini PC and give your edge a home.'
+                    : 'Connect an ESP32 or Arduino and give your edge a home.'
                 }}
               </p>
               <button v-if="!state.devices.length" class="button primary" @click="open('enroll')">
@@ -683,14 +677,13 @@ onUnmounted(() => {
               </div>
             </section>
             <section class="fleet-note">
-              <span class="mini-label"><Network :size="16" /> HARDWARE AGNOSTIC</span>
+              <span class="mini-label"><Network :size="16" /> BUILT FOR MICROCONTROLLERS</span>
               <h2>Different devices.<br />One connected fleet.</h2>
               <p>
-                Microcontrollers to mini servers. Monitor them together, update them on their terms.
+                Arduino and ESP32. Monitor your boards together and deploy firmware built for each target.
               </p>
               <div class="supported-icons">
-                <span><Cpu :size="19" />ESP32</span><span><Code2 :size="19" />Arduino</span
-                ><span><HardDrive :size="19" />Pi</span><span><Server :size="19" />PC</span>
+                <span><Cpu :size="19" />ESP32</span><span><Code2 :size="19" />Arduino</span>
               </div>
               <button @click="page = 'connect'">
                 Explore the connection guide <ArrowRight :size="17" />
@@ -743,7 +736,7 @@ onUnmounted(() => {
               <div class="empty-icon"><Layers3 :size="30" /></div>
               <h3>Make your next release a little easier</h3>
               <p>
-                Upload a compiled firmware image or Linux update package. Give it a version and an
+                Upload a compiled Arduino or ESP32 firmware image. Give it a version and an
                 exact hardware target.
               </p>
               <button class="button primary" @click="open('upload')">
@@ -895,16 +888,6 @@ Content-Type: application/json
             </section>
             <div class="guide-side">
               <section class="panel guide-card">
-                <Terminal :size="25" />
-                <h3>Raspberry Pi & mini PC</h3>
-                <p>
-                  Use the included Python 3 agent for Linux telemetry. Configure an installer
-                  executable to apply your own software packages.
-                </p>
-                <code>agents/linux/agent.py</code>
-                <p>See the README for environment variables and installer requirements.</p>
-              </section>
-              <section class="panel guide-card">
                 <Cpu :size="25" />
                 <h3>ESP32 & Arduino</h3>
                 <p>
@@ -1013,26 +996,26 @@ Content-Type: application/json
           >
             <Copy :size="16" />
           </button></div></label
-      ><label>Linux agent quick start</label>
-      <pre>{{ connectionCommand }}</pre>
+      ><label>Firmware HTTP headers</label>
+      <pre>{{ connectionHeaders }}</pre>
       <p class="field-hint">
-        Replace YOUR_SERVER with the server address reachable by your device. For microcontrollers,
-        use these credentials in your firmware’s HTTP client.
+        Use these headers in your Arduino or ESP32 firmware’s HTTP client. Send heartbeats to
+        your server at /api/agent/heartbeat. See the connection guide for the request body and update protocol.
       </p>
       <div class="modal-actions">
-        <button class="button secondary" @click="copy(connectionCommand)">
-          <Copy :size="16" />Copy commands</button
+        <button class="button secondary" @click="copy(connectionHeaders)">
+          <Copy :size="16" />Copy headers</button
         ><button class="button primary" @click="close">I saved my token<Check :size="16" /></button>
       </div>
     </div>
     <form v-else-if="dialog === 'upload'" class="modal-body" @submit.prevent="upload">
       <p class="form-description">
-        Upload a compiled image or update package for one hardware target.
+        Upload a compiled Arduino or ESP32 firmware image for one hardware target.
       </p>
       <label class="upload-zone"
         ><Upload :size="28" /><strong>{{ uploadFile?.name || 'Choose a firmware artifact' }}</strong
         ><span>{{
-          uploadFile ? size(uploadFile.size) : 'Any binary or package · Up to 64 MiB'
+          uploadFile ? size(uploadFile.size) : 'Compiled firmware · Up to 64 MiB'
         }}</span
         ><input type="file" required aria-label="Firmware artifact" @change="fileChanged"
       /></label>

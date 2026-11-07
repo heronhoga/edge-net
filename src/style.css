@@ -757,16 +757,6 @@ td strong {
   background: #eef6f0;
   border-color: #e1eee4;
 }
-.device-icon.raspberry-pi {
-  color: #a481a0;
-  background: #f8f1f6;
-  border-color: #eee2eb;
-}
-.device-icon.mini-pc {
-  color: #6b8db5;
-  background: #f1f5fb;
-  border-color: #e6ebf3;
-}
 .device-icon.arduino {
   color: #629b9d;
   background: #eef7f7;

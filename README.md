@@ -1,10 +1,10 @@
 # Edgenet
 
-A self-hosted portal for monitoring edge devices and coordinating firmware / software updates. Built with **Vue 3 + TypeScript + Vite**, **Bun**, and **Go Fiber v3**.
+A self-hosted portal for monitoring Arduino and ESP32 devices and coordinating firmware updates. Built with **Vue 3 + TypeScript + Vite**, **Bun**, and **Go Fiber v3**.
 
 ## What works
 
-- Enroll ESP32, Arduino, Raspberry Pi, and mini PC devices with a unique access token.
+- Enroll ESP32 and Arduino devices with a unique access token.
 - Monitor online/offline status, CPU, memory, temperature, uptime, and firmware version.
 - View the latest 60 telemetry samples per device and the latest 100 activity events.
 - Upload artifacts up to 64 MiB, with server-generated SHA-256 checksums.
@@ -12,19 +12,20 @@ A self-hosted portal for monitoring edge devices and coordinating firmware / sof
 - Track queued → downloading → installing → succeeded / failed jobs; cancel queued jobs.
 - Rotate device tokens and remove devices; credentials are separate from admin access.
 - Persist metadata in a transactional bbolt database and store artifacts on disk.
-- Run the included dependency-free Linux agent with an optional custom installer.
 
 The dashboard starts empty and displays real API data. Devices connect outward over HTTP(S), so they can live behind NAT; the server does not discover or directly dial hardware.
 
 ## Quick start
 
-Requires **Go 1.26+** and **Bun 1.3+**. Python 3.9+ is needed only for the Linux agent. Node/npm are not required.
+Requires **Go 1.26+** and **Bun 1.3+**. Node/npm are not required.
 
 ```sh
 bun install
 export ADMIN_TOKEN='replace-with-a-long-random-secret'
 bun run api
 ```
+
+The backend entry point is `main.go` in the project root. You can also start it directly with `go run main.go`.
 
 In a second terminal:
 
@@ -50,7 +51,7 @@ export ADMIN_TOKEN='replace-with-a-long-random-secret'
 bun run api
 ```
 
-Open **http://localhost:8080**. Fiber serves the production frontend from `dist/`. Run from the project root so the server can locate it. Place the server behind an HTTPS reverse proxy for remote devices. The Linux agent verifies server certificates using the operating system trust store.
+Open **http://localhost:8080**. Fiber serves the production frontend from `dist/`. Run from the project root so the server can locate it. Place the server behind an HTTPS reverse proxy for remote devices.
 
 ### Checks
 
@@ -59,7 +60,6 @@ bun run build
 bun run test:api
 go test -race ./...
 go vet ./...
-bun run test:agent
 ```
 
 Optional browser integration test (uses its own database under `data/e2e`):
@@ -69,43 +69,14 @@ bunx --bun playwright install chromium
 bun run test:e2e
 ```
 
-## Connecting a Raspberry Pi or mini PC
+## Connecting an Arduino or ESP32
 
-1. Click **Add device**. Select a device type and an exact target (`linux-arm64`, `linux-amd64`, or a more specific identifier for your own image).
+1. Click **Add device**. Select **ESP32** or **Arduino** and an exact board target, such as `esp32-devkit-v1` or `arduino-uno-r4-wifi`.
 2. Copy the device ID and token. Only the token hash is persisted by the API; the plaintext token is shown once.
-3. On the Linux device, copy `agents/linux/agent.py` and run:
+3. Configure your board firmware’s HTTP client with the server URL and the displayed authentication headers.
+4. Implement the device protocol below: send a heartbeat every 30 seconds, poll for jobs, and report update progress. A device is offline after 90 seconds without a heartbeat.
 
-```sh
-export EDGENET_URL='http://YOUR_SERVER:8080'
-export EDGENET_DEVICE_ID='device-id-from-dashboard'
-export EDGENET_DEVICE_TOKEN='device-token-from-dashboard'
-export EDGENET_VERSION='1.0.0'
-python3 agents/linux/agent.py
-```
-
-The agent reports actual Linux metrics every 30 seconds. CPU is omitted on the first sample because it requires two measurements. Memory uses `MemAvailable`; temperature is reported if thermal zone 0 is readable. A device is offline after 90 seconds without a heartbeat. Agent state defaults to `~/.local/state/edgenet`; override with `EDGENET_STATE_DIR`. Use a separate state directory per device identity.
-
-### Enabling Linux software updates
-
-Without an installer, the agent operates in **telemetry-only mode** and leaves update jobs queued.
-
-```sh
-export EDGENET_TARGET='linux-arm64'
-export EDGENET_INSTALLER='/opt/my-product/install-update'
-python3 agents/linux/agent.py
-```
-
-`EDGENET_TARGET` must match both the enrolled device and the uploaded artifact. The installer is an executable that you supply for your application. The agent invokes it directly, without a shell:
-
-```text
-/opt/my-product/install-update /absolute/path/artifact.bin VERSION HARDWARE_TARGET
-```
-
-The installer must apply the package, verify the application is healthy, and return **0 only after success**. A nonzero exit or 10-minute timeout fails the job. It owns package format validation, activation, application-specific rollback, and any required privileges. It must run synchronously, without detached work or a reboot before returning. This reference agent is for application updates, not whole-OS image replacement.
-
-The agent verifies size and SHA-256 before calling the installer. Heartbeats continue during installation. A local journal retains terminal results across network errors, so a lost acknowledgement does not rerun the installer. If the agent is interrupted during installation, it reports the outcome as failed/unknown on restart rather than claiming success. Inspect the device before retrying in that situation.
-
-**Trying a dashboard update:** upload a package your installer understands with the same hardware target, open **Deployments → New deployment**, select the artifact and device, then watch the status. The agent polls every 30 seconds. Terminal failures can be retried by creating a new deployment after fixing their cause.
+**Trying a dashboard update:** upload firmware built for the same hardware target, open **Deployments → New deployment**, select the artifact and device, then watch the status. Your board firmware must implement downloading, verification, and board-specific flashing. Report success only after validating the updated firmware.
 
 ## ESP32 and Arduino integration
 
@@ -116,9 +87,8 @@ The portal supplies the control plane and transport; your firmware supplies hard
 | ESP32 | HTTP client for heartbeats/job polling; an OTA-capable partition layout and ESP32 `Update`/ESP-IDF OTA APIs for flashing. Verify the artifact before activating it. Persist the job ID across reboot and report success after boot validation. |
 | Network-capable Arduino | Implement the HTTP protocol and the OTA mechanism supported by that board/bootloader. Exact targets should distinguish board variants and flash layouts. |
 | USB-only Arduino (e.g. classic Uno) | A networked gateway must own the device identity, collect serial telemetry, and run a board-specific flashing tool. A classic Uno cannot receive network OTA directly. |
-| Raspberry Pi / Linux mini PC | Use the included Linux agent with an application-specific installer. |
 
-There is no universal binary or flashing routine shared by these boards. A `.bin` for one ESP32 partition layout or a Linux ARM package is not interchangeable with another target. ESP32 sketches and serial gateway implementations are not included yet; the protocol below is the integration contract.
+There is no universal binary or flashing routine shared by these boards. Firmware built for one board or ESP32 partition layout is not interchangeable with another target. Arduino/ESP32 sketches and serial gateway implementations are not included yet; the protocol below is the integration contract.
 
 ## Device protocol
 
@@ -206,15 +176,14 @@ Use `Authorization: Bearer ADMIN_TOKEN`.
 | POST | `/api/admin/deployments` | `{ "firmwareId": "...", "deviceIds": ["..."] }` |
 | POST | `/api/admin/deployments/:id/cancel` | Cancels only a queued job |
 
-Device kinds: `esp32`, `arduino`, `raspberry-pi`, `mini-pc`. Enrollment fields and versions have bounded lengths; artifact target/version pairs are unique. Multi-device deployment validation and creation are atomic. Errors use `{ "error": "message" }`.
+Device kinds: `esp32`, `arduino`. Enrollment fields and versions have bounded lengths; artifact target/version pairs are unique. Multi-device deployment validation and creation are atomic. Errors use `{ "error": "message" }`.
 
 ## Structure and scope
 
 ```text
-cmd/server/           Go entry point and graceful shutdown
+main.go               Go entry point and graceful shutdown
 internal/portal/      Fiber routes, models, bbolt transactions, integration tests
 src/                  Vue dashboard, typed API data, responsive styles
-agents/linux/         Python telemetry and update agent
 data/                 Runtime database + artifacts (gitignored)
 ```
 

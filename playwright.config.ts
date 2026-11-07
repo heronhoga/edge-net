@@ -13,7 +13,7 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   webServer: {
-    command: 'go run ./cmd/server',
+    command: 'go run main.go',
     url: 'http://127.0.0.1:18080/api/health',
     reuseExistingServer: false,
     env: {
